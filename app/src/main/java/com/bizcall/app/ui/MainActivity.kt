@@ -23,7 +23,6 @@ import com.bizcall.app.api.ApiClient
 import com.bizcall.app.api.RegisterRequest
 import com.bizcall.app.queue.FailedUploadDatabase
 import com.bizcall.app.service.PhoneStateService
-import com.bizcall.app.service.SamsungRecordingDetector
 import com.bizcall.app.upload.S3Uploader
 import com.bizcall.app.util.DeviceDetector
 import com.bizcall.app.util.DeviceIdManager
@@ -69,7 +68,12 @@ class MainActivity : AppCompatActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ -> updatePermissionStatus() }
+    ) { _ ->
+        // 권한 팝업 결과 후 상태 갱신
+        if (PreferenceManager.isRegistered(this)) {
+            updatePermissionStatus()
+        }
+    }
 
     private val qrLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -97,34 +101,56 @@ class MainActivity : AppCompatActivity() {
         } else {
             showUnregisteredState()
         }
+
+        // ★ 최초 설치 시 권한 요청 — 등록 여부와 무관하게 항상 실행
+        requestPermissionsIfNeeded()
+    }
+
+    // ★ 시스템 설정에서 권한 허용 후 복귀 시 상태 갱신
+    override fun onResume() {
+        super.onResume()
+        if (PreferenceManager.isRegistered(this)) {
+            updatePermissionStatus()
+        }
     }
 
     private fun bindViews() {
-        layoutUnregistered = findViewById(R.id.layoutUnregistered)
-        etToken = findViewById(R.id.etToken)
-        btnRegister = findViewById(R.id.btnRegister)
-        btnScanQr = findViewById(R.id.btnScanQr)
-        tvStatus = findViewById(R.id.tvStatus)
+        layoutUnregistered  = findViewById(R.id.layoutUnregistered)
+        etToken             = findViewById(R.id.etToken)
+        btnRegister         = findViewById(R.id.btnRegister)
+        btnScanQr           = findViewById(R.id.btnScanQr)
+        tvStatus            = findViewById(R.id.tvStatus)
 
-        layoutRegistered = findViewById(R.id.layoutRegistered)
-        tvPhoneId = findViewById(R.id.tvPhoneId)
-        tvDeviceId = findViewById(R.id.tvDeviceId)
-        tvRecordingMode = findViewById(R.id.tvRecordingMode)
-        tvWatchPath = findViewById(R.id.tvWatchPath)
-        tvServiceStatus = findViewById(R.id.tvServiceStatus)
-        tvPermissionStatus = findViewById(R.id.tvPermissionStatus)
+        layoutRegistered    = findViewById(R.id.layoutRegistered)
+        tvPhoneId           = findViewById(R.id.tvPhoneId)
+        tvDeviceId          = findViewById(R.id.tvDeviceId)
+        tvRecordingMode     = findViewById(R.id.tvRecordingMode)
+        tvWatchPath         = findViewById(R.id.tvWatchPath)
+        tvServiceStatus     = findViewById(R.id.tvServiceStatus)
+        tvPermissionStatus  = findViewById(R.id.tvPermissionStatus)
         btnCheckPermissions = findViewById(R.id.btnCheckPermissions)
-        tvFailedCount = findViewById(R.id.tvFailedCount)
-        btnRetryFailed = findViewById(R.id.btnRetryFailed)
-        btnManualUpload = findViewById(R.id.btnManualUpload)
-        btnUnregister = findViewById(R.id.btnUnregister)
+        tvFailedCount       = findViewById(R.id.tvFailedCount)
+        btnRetryFailed      = findViewById(R.id.btnRetryFailed)
+        btnManualUpload     = findViewById(R.id.btnManualUpload)
+        btnUnregister       = findViewById(R.id.btnUnregister)
+    }
+
+    // ── 권한 최초 요청 ─────────────────────────────────────────────
+
+    private fun requestPermissionsIfNeeded() {
+        val denied = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (denied.isNotEmpty()) {
+            permissionLauncher.launch(denied.toTypedArray())
+        }
     }
 
     // ── 등록 전 화면 ──────────────────────────────────────────────
 
     private fun showUnregisteredState() {
         layoutUnregistered.visibility = View.VISIBLE
-        layoutRegistered.visibility = View.GONE
+        layoutRegistered.visibility   = View.GONE
 
         btnScanQr.setOnClickListener {
             qrLauncher.launch(Intent(this, QrScanActivity::class.java))
@@ -145,12 +171,15 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = "등록 중..."
         tvStatus.setTextColor(getColor(android.R.color.holo_orange_light))
 
-        val deviceId = DeviceIdManager.getOrCreateDeviceId(this)
+        // ★ 수정: getOrCreateDeviceId → getOrCreate
+        val deviceId = DeviceIdManager.getOrCreate(this)
 
         lifecycleScope.launch {
             try {
                 val response = withContext(Dispatchers.IO) {
-                    ApiClient.phoneApi.register(RegisterRequest(token = token, device_id = deviceId))
+                    ApiClient.phoneApi.register(
+                        RegisterRequest(token = token, device_id = deviceId)
+                    )
                 }
                 if (response.isSuccessful && response.body() != null) {
                     val body = response.body()!!
@@ -172,49 +201,40 @@ class MainActivity : AppCompatActivity() {
 
     private fun showRegisteredState() {
         layoutUnregistered.visibility = View.GONE
-        layoutRegistered.visibility = View.VISIBLE
+        layoutRegistered.visibility   = View.VISIBLE
 
-        // 등록 정보 표시
-        val phoneId = PreferenceManager.getPhoneId(this) ?: "-"
+        val phoneId  = PreferenceManager.getPhoneId(this)  ?: "-"
         val deviceId = PreferenceManager.getDeviceId(this) ?: "-"
-        tvPhoneId.text = "Phone ID: ${phoneId.take(8)}…"
+        tvPhoneId.text  = "Phone ID: ${phoneId.take(8)}…"
         tvDeviceId.text = "Device ID: ${deviceId.take(8)}…"
 
-        // 녹음 모드 표시 (현재 Samsung 고정)
         val mode = PreferenceManager.getRecordingMode(this)
         tvRecordingMode.text = mode.displayName
 
-        // 감시 경로 표시
         val watchPath = DeviceDetector.resolveRecordingPath()
         tvWatchPath.text = watchPath ?: "경로 없음"
         if (watchPath == null) {
             tvWatchPath.setTextColor(getColor(android.R.color.holo_red_light))
         }
 
-        // 서비스 상태 표시 및 시작
         startPhoneStateService()
         tvServiceStatus.text = "실행 중"
         tvServiceStatus.setTextColor(getColor(android.R.color.holo_green_dark))
 
-        // 권한 상태
         updatePermissionStatus()
-
-        // 업로드 실패 큐 관찰
         observeFailedQueue()
 
-        // 수동 업로드
         btnManualUpload.setOnClickListener {
             filePickerLauncher.launch("audio/*")
         }
 
-        // 실패 재시도
         btnRetryFailed.setOnClickListener {
             retryFailedUploads()
         }
 
-        // 등록 해제
+        // ★ 수정: 등록 해제 → 담당자 문의 안내로 제한
         btnUnregister.setOnClickListener {
-            showUnregisterDialog()
+            showUnregisterContactDialog()
         }
     }
 
@@ -234,7 +254,8 @@ class MainActivity : AppCompatActivity() {
             tvPermissionStatus.setTextColor(getColor(android.R.color.holo_red_light))
             btnCheckPermissions.visibility = View.VISIBLE
             btnCheckPermissions.setOnClickListener {
-                // 권한 재요청 시도, 완전 거부 상태면 설정으로 이동
+                // ★ shouldShowRequestPermissionRationale: 완전 거부(다시 묻지 않음) 여부 확인
+                // true = 재요청 가능 / false = 설정 화면으로 이동
                 val canRequest = denied.any { shouldShowRequestPermissionRationale(it) }
                 if (canRequest) {
                     permissionLauncher.launch(denied.toTypedArray())
@@ -278,28 +299,27 @@ class MainActivity : AppCompatActivity() {
             }
             failed.forEach { item ->
                 S3Uploader.enqueue(
-                    context = this@MainActivity,
-                    filePath = item.localFilePath,
-                    direction = item.direction,
-                    callerNumber = item.callerNumber,
+                    context       = this@MainActivity,
+                    filePath      = item.localFilePath,
+                    direction     = item.direction,
+                    callerNumber  = item.callerNumber,
                     callStartTime = item.callStartTime
                 )
                 withContext(Dispatchers.IO) { db.dao().deleteById(item.id) }
             }
-            Toast.makeText(this@MainActivity, "${failed.size}건 재시도 등록 완료", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this@MainActivity,
+                "${failed.size}건 재시도 등록 완료",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     // ── 수동 업로드 메타데이터 입력 다이얼로그 ──────────────────────
 
-    /**
-     * 파일 선택 후 발신/수신 방향과 전화번호를 입력받아 업로드
-     * 이전: direction=unknown, callerNumber=unknown 하드코딩
-     * 이후: 담당자가 직접 입력 → 파이프라인에서 정확한 메타로 분석 가능
-     */
     private fun showManualUploadMetaDialog(uris: List<Uri>) {
-        val dialogView = layoutInflater.inflate(R.layout.dialog_manual_upload_meta, null)
-        val etNumber = dialogView.findViewById<EditText>(R.id.etCallerNumber)
+        val dialogView  = layoutInflater.inflate(R.layout.dialog_manual_upload_meta, null)
+        val etNumber    = dialogView.findViewById<EditText>(R.id.etCallerNumber)
         val btnIncoming = dialogView.findViewById<Button>(R.id.btnDirectionIncoming)
         val btnOutgoing = dialogView.findViewById<Button>(R.id.btnDirectionOutgoing)
 
@@ -336,10 +356,10 @@ class MainActivity : AppCompatActivity() {
                 val filePath = withContext(Dispatchers.IO) { getFilePathFromUri(uri) }
                 if (filePath != null) {
                     S3Uploader.enqueue(
-                        context = this@MainActivity,
-                        filePath = filePath,
-                        direction = direction,
-                        callerNumber = callerNumber,
+                        context       = this@MainActivity,
+                        filePath      = filePath,
+                        direction     = direction,
+                        callerNumber  = callerNumber,
                         callStartTime = System.currentTimeMillis()
                     )
                     successCount++
@@ -353,19 +373,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ── 등록 해제 ──────────────────────────────────────────────────
+    // ── 등록 해제 (담당자 문의 제한) ───────────────────────────────
 
-    private fun showUnregisterDialog() {
+    // ★ 수정: 실제 해제 대신 담당자 문의 안내 팝업으로 제한
+    private fun showUnregisterContactDialog() {
         AlertDialog.Builder(this)
             .setTitle("기기 등록 해제")
-            .setMessage("등록을 해제하면 통화 녹음 및 업로드가 중단됩니다.\n계속하시겠습니까?")
-            .setPositiveButton("해제") { _, _ ->
-                stopService(Intent(this, PhoneStateService::class.java))
-                PreferenceManager.clear(this)
-                showUnregisteredState()
-                Toast.makeText(this, "등록이 해제되었습니다", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("취소", null)
+            .setMessage("기기 등록 해제는 비즈옵스팀 담당자에게 문의해주세요.")
+            .setPositiveButton("확인", null)
             .show()
     }
 
