@@ -1,0 +1,28 @@
+# Android Studio
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# 앱 빌드 결과물
+app/build/
+app/release/
+
+# 키스토어 (절대 업로드 금지)
+*.jks
+*.keystore
+keystore.properties
+
+# 민감 정보
+secrets.properties
+google-services.json
+
+# Room DB 자동 생성 파일
+*.db
+*.db-shm
+*.db-wal
