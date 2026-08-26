@@ -6,17 +6,20 @@ import android.content.Intent
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.bizcall.app.service.CallRecordingService
+import com.bizcall.app.util.PendingCallMeta
 import com.bizcall.app.util.PreferenceManager
+import com.bizcall.app.util.RecordingMode
 
 class CallReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "CallReceiver"
 
+        // BroadcastReceiver는 매번 새 인스턴스 생성 → 통화 상태는 companion object에 유지
         private var lastState = TelephonyManager.CALL_STATE_IDLE
-        private var callStartTime: Long = 0
+        private var callStartTime: Long = 0L
         private var incomingNumber = ""
-        private var isRecording = false
+        private var isOffhook = false
         private var currentDirection = ""
         private var currentCallerNumber = ""
     }
@@ -27,31 +30,19 @@ class CallReceiver : BroadcastReceiver() {
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
         val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER) ?: ""
+        val mode = PreferenceManager.getRecordingMode(context)
 
-        Log.d(TAG, "PHONE_STATE: $state / number: $number / lastState: $lastState")
+        Log.d(TAG, "[$mode] PHONE_STATE=$state / number=$number / lastState=$lastState")
 
         when (state) {
 
-            // 수신 전화 울리는 중
             TelephonyManager.EXTRA_STATE_RINGING -> {
                 lastState = TelephonyManager.CALL_STATE_RINGING
                 incomingNumber = number
             }
 
-            // 통화 연결됨 (발신: IDLE→OFFHOOK / 수신: RINGING→OFFHOOK)
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                if (isRecording) {
-                    // 이미 녹음 중인데 번호가 새로 들어오면 업데이트
-                    if (number.isNotEmpty() && currentCallerNumber.isEmpty()) {
-                        currentCallerNumber = number
-                        val updateIntent = Intent(context, CallRecordingService::class.java).apply {
-                            action = CallRecordingService.ACTION_UPDATE_NUMBER
-                            putExtra(CallRecordingService.EXTRA_CALLER_NUMBER, number)
-                        }
-                        context.startForegroundService(updateIntent)
-                    }
-                    return
-                }
+                if (isOffhook) return // 이미 통화 중 — 중복 이벤트 무시
 
                 currentDirection = if (lastState == TelephonyManager.CALL_STATE_RINGING) {
                     "incoming"
@@ -59,49 +50,64 @@ class CallReceiver : BroadcastReceiver() {
                     "outgoing"
                 }
                 currentCallerNumber = if (currentDirection == "incoming") incomingNumber else number
-
-                lastState = TelephonyManager.CALL_STATE_OFFHOOK
                 callStartTime = System.currentTimeMillis()
-                isRecording = true
+                isOffhook = true
+                lastState = TelephonyManager.CALL_STATE_OFFHOOK
 
-                Log.d(TAG, "녹음 시작 요청 — direction: $currentDirection / number: $currentCallerNumber")
+                Log.d(TAG, "통화 연결: direction=$currentDirection, number=$currentCallerNumber")
 
-                val serviceIntent = Intent(context, CallRecordingService::class.java).apply {
-                    action = CallRecordingService.ACTION_START
-                    putExtra(CallRecordingService.EXTRA_DIRECTION, currentDirection)
-                    putExtra(CallRecordingService.EXTRA_CALLER_NUMBER, currentCallerNumber)
-                    putExtra(CallRecordingService.EXTRA_CALL_START_TIME, callStartTime)
+                // DIRECT_MIC 모드만 CallRecordingService 실행
+                // SAMSUNG 모드는 SamsungRecordingDetector가 단독 처리
+                if (mode == RecordingMode.DIRECT_MIC) {
+                    context.startForegroundService(
+                        Intent(context, CallRecordingService::class.java).apply {
+                            action = CallRecordingService.ACTION_START
+                            putExtra(CallRecordingService.EXTRA_DIRECTION, currentDirection)
+                            putExtra(CallRecordingService.EXTRA_CALLER_NUMBER, currentCallerNumber)
+                            putExtra(CallRecordingService.EXTRA_CALL_START_TIME, callStartTime)
+                        }
+                    )
                 }
-                context.startForegroundService(serviceIntent)
             }
 
-            // 통화 종료
             TelephonyManager.EXTRA_STATE_IDLE -> {
-                if (lastState != TelephonyManager.CALL_STATE_IDLE) {
+                if (lastState == TelephonyManager.CALL_STATE_IDLE) return // 중복 IDLE 무시
 
-                    // 실제 통화 연결 시간 계산 (OFFHOOK 기준)
-                    val callDurationMs = if (callStartTime > 0) {
-                        System.currentTimeMillis() - callStartTime
-                    } else {
-                        0L
+                val callEndTime = System.currentTimeMillis()
+                val callDurationMs = if (callStartTime > 0L) callEndTime - callStartTime else 0L
+
+                Log.d(TAG, "통화 종료: duration=${callDurationMs / 1000}초, wasOffhook=$isOffhook")
+
+                when (mode) {
+                    RecordingMode.SAMSUNG -> {
+                        // 실제 통화 연결이 있었던 경우만 push
+                        // isOffhook=false(부재중)이면 녹음 파일 자체가 없으므로 push 불필요
+                        if (isOffhook) {
+                            PendingCallMeta.push(
+                                direction = currentDirection,
+                                callerNumber = currentCallerNumber,
+                                callStartTime = callStartTime,
+                                callEndTime = callEndTime
+                            )
+                        }
                     }
-
-                    Log.d(TAG, "통화 종료 — 통화 시간: ${callDurationMs / 1000}초 / isRecording: $isRecording")
-
-                    lastState = TelephonyManager.CALL_STATE_IDLE
-                    isRecording = false
-                    incomingNumber = ""
-                    currentCallerNumber = ""
-                    currentDirection = ""
-                    callStartTime = 0L
-
-                    val serviceIntent = Intent(context, CallRecordingService::class.java).apply {
-                        action = CallRecordingService.ACTION_STOP
-                        // 통화 시간 전달 → CallRecordingService에서 최소 시간 미만 시 파일 삭제
-                        putExtra(CallRecordingService.EXTRA_CALL_DURATION_MS, callDurationMs)
+                    RecordingMode.DIRECT_MIC -> {
+                        context.startForegroundService(
+                            Intent(context, CallRecordingService::class.java).apply {
+                                action = CallRecordingService.ACTION_STOP
+                                putExtra(CallRecordingService.EXTRA_CALL_DURATION_MS, callDurationMs)
+                            }
+                        )
                     }
-                    context.startForegroundService(serviceIntent)
                 }
+
+                // 상태 초기화
+                lastState = TelephonyManager.CALL_STATE_IDLE
+                isOffhook = false
+                incomingNumber = ""
+                currentCallerNumber = ""
+                currentDirection = ""
+                callStartTime = 0L
             }
         }
     }
