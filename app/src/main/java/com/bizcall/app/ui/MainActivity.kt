@@ -6,9 +6,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,26 +23,40 @@ import com.bizcall.app.api.ApiClient
 import com.bizcall.app.api.RegisterRequest
 import com.bizcall.app.queue.FailedUploadDatabase
 import com.bizcall.app.service.PhoneStateService
+import com.bizcall.app.service.SamsungRecordingDetector
 import com.bizcall.app.upload.S3Uploader
+import com.bizcall.app.util.DeviceDetector
 import com.bizcall.app.util.DeviceIdManager
 import com.bizcall.app.util.PreferenceManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var tvTitle: TextView
-    private lateinit var tvSubtitle: TextView
+    // ── 등록 전 뷰 ──
+    private lateinit var layoutUnregistered: LinearLayout
     private lateinit var etToken: EditText
     private lateinit var btnRegister: Button
     private lateinit var btnScanQr: Button
     private lateinit var tvStatus: TextView
-    private lateinit var btnManualUpload: Button
+
+    // ── 등록 후 뷰 ──
+    private lateinit var layoutRegistered: LinearLayout
+    private lateinit var tvPhoneId: TextView
+    private lateinit var tvDeviceId: TextView
+    private lateinit var tvRecordingMode: TextView
+    private lateinit var tvWatchPath: TextView
+    private lateinit var tvServiceStatus: TextView
+    private lateinit var tvPermissionStatus: TextView
+    private lateinit var btnCheckPermissions: Button
     private lateinit var tvFailedCount: TextView
     private lateinit var btnRetryFailed: Button
+    private lateinit var btnManualUpload: Button
+    private lateinit var btnUnregister: Button
 
     private val requiredPermissions = mutableListOf(
-        Manifest.permission.RECORD_AUDIO,
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.READ_CALL_LOG
     ).apply {
@@ -53,16 +69,7 @@ class MainActivity : AppCompatActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        if (allGranted) {
-            tvStatus.text = "권한 허용 완료"
-            tvStatus.setTextColor(getColor(android.R.color.holo_green_dark))
-        } else {
-            tvStatus.text = "일부 권한이 거부되었습니다. 설정에서 허용해주세요."
-            tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
-        }
-    }
+    ) { _ -> updatePermissionStatus() }
 
     private val qrLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -73,35 +80,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 수동 업로드: 다중 파일 선택 (audio/*)
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
-        handleManualUpload(uris)
+        showManualUploadMetaDialog(uris)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        bindViews()
 
-        tvTitle = findViewById(R.id.tvTitle)
-        tvSubtitle = findViewById(R.id.tvSubtitle)
+        if (PreferenceManager.isRegistered(this)) {
+            showRegisteredState()
+        } else {
+            showUnregisteredState()
+        }
+    }
+
+    private fun bindViews() {
+        layoutUnregistered = findViewById(R.id.layoutUnregistered)
         etToken = findViewById(R.id.etToken)
         btnRegister = findViewById(R.id.btnRegister)
         btnScanQr = findViewById(R.id.btnScanQr)
         tvStatus = findViewById(R.id.tvStatus)
-        btnManualUpload = findViewById(R.id.btnManualUpload)
+
+        layoutRegistered = findViewById(R.id.layoutRegistered)
+        tvPhoneId = findViewById(R.id.tvPhoneId)
+        tvDeviceId = findViewById(R.id.tvDeviceId)
+        tvRecordingMode = findViewById(R.id.tvRecordingMode)
+        tvWatchPath = findViewById(R.id.tvWatchPath)
+        tvServiceStatus = findViewById(R.id.tvServiceStatus)
+        tvPermissionStatus = findViewById(R.id.tvPermissionStatus)
+        btnCheckPermissions = findViewById(R.id.btnCheckPermissions)
         tvFailedCount = findViewById(R.id.tvFailedCount)
         btnRetryFailed = findViewById(R.id.btnRetryFailed)
+        btnManualUpload = findViewById(R.id.btnManualUpload)
+        btnUnregister = findViewById(R.id.btnUnregister)
+    }
 
-        // 등록 완료 상태면 바로 등록 완료 화면으로
-        if (PreferenceManager.isRegistered(this)) {
-            showRegisteredState()
-            checkAndRequestPermissions()
-            observeFailedQueue()
-            return
-        }
+    // ── 등록 전 화면 ──────────────────────────────────────────────
+
+    private fun showUnregisteredState() {
+        layoutUnregistered.visibility = View.VISIBLE
+        layoutRegistered.visibility = View.GONE
 
         btnScanQr.setOnClickListener {
             qrLauncher.launch(Intent(this, QrScanActivity::class.java))
@@ -116,134 +139,144 @@ class MainActivity : AppCompatActivity() {
             }
             registerPhone(token)
         }
-
-        checkAndRequestPermissions()
-    }
-
-    private fun checkAndRequestPermissions() {
-        val denied = requiredPermissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (denied.isEmpty()) return
-
-        AlertDialog.Builder(this)
-            .setTitle("권한 필요")
-            .setMessage("통화 녹음 및 업무폰 기능을 위해\n다음 권한이 필요합니다.\n\n• 마이크 (통화 녹음)\n• 전화 상태 (통화 감지)\n• 통화 기록 (발신 번호 확인)")
-            .setPositiveButton("허용") { _, _ -> permissionLauncher.launch(denied.toTypedArray()) }
-            .setNegativeButton("취소", null)
-            .show()
     }
 
     private fun registerPhone(token: String) {
-        btnRegister.isEnabled = false
-        btnScanQr.isEnabled = false
         tvStatus.text = "등록 중..."
-        tvStatus.setTextColor(getColor(android.R.color.darker_gray))
+        tvStatus.setTextColor(getColor(android.R.color.holo_orange_light))
 
-        val deviceId = DeviceIdManager.getOrCreate(this)
+        val deviceId = DeviceIdManager.getOrCreateDeviceId(this)
 
         lifecycleScope.launch {
             try {
-                val response = ApiClient.phoneApi.register(
-                    RegisterRequest(token = token, device_id = deviceId)
-                )
+                val response = withContext(Dispatchers.IO) {
+                    ApiClient.phoneApi.register(RegisterRequest(token = token, device_id = deviceId))
+                }
                 if (response.isSuccessful && response.body() != null) {
                     val body = response.body()!!
-                    PreferenceManager.savePhoneInfo(
-                        context = this@MainActivity,
-                        phoneId = body.phone_id,
-                        deviceId = deviceId
-                    )
+                    PreferenceManager.savePhoneInfo(this@MainActivity, body.phone_id, deviceId)
+                    startPhoneStateService()
                     showRegisteredState()
-                    checkAndRequestPermissions()
-                    observeFailedQueue()
                 } else {
-                    val msg = when (response.code()) {
-                        401 -> "유효하지 않은 토큰입니다"
-                        409 -> "이미 다른 기기에 등록된 토큰입니다"
-                        403 -> "비활성화된 업무폰입니다"
-                        else -> "등록 실패 (${response.code()})"
-                    }
-                    tvStatus.text = msg
+                    tvStatus.text = "등록 실패: ${response.code()}"
                     tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
-                    btnRegister.isEnabled = true
-                    btnScanQr.isEnabled = true
                 }
             } catch (e: Exception) {
-                tvStatus.text = "네트워크 오류: ${e.message}"
+                tvStatus.text = "오류: ${e.message}"
                 tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
-                btnRegister.isEnabled = true
-                btnScanQr.isEnabled = true
             }
         }
     }
 
+    // ── 등록 후 화면 ──────────────────────────────────────────────
+
     private fun showRegisteredState() {
-        val phoneId = PreferenceManager.getPhoneId(this)
-        tvTitle.text = "BizCall 활성화됨"
-        tvSubtitle.text = "업무폰으로 사용 중이며\n자동으로 통화가 기록됩니다"
-        etToken.visibility = View.GONE
-        btnRegister.visibility = View.GONE
-        btnScanQr.visibility = View.GONE
-        tvStatus.text = "Phone ID: $phoneId"
-        tvStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+        layoutUnregistered.visibility = View.GONE
+        layoutRegistered.visibility = View.VISIBLE
 
-        // 수동 업로드 / 실패 목록 UI 표시
-        btnManualUpload.visibility = View.VISIBLE
-        tvFailedCount.visibility = View.VISIBLE
-        btnRetryFailed.visibility = View.VISIBLE
+        // 등록 정보 표시
+        val phoneId = PreferenceManager.getPhoneId(this) ?: "-"
+        val deviceId = PreferenceManager.getDeviceId(this) ?: "-"
+        tvPhoneId.text = "Phone ID: ${phoneId.take(8)}…"
+        tvDeviceId.text = "Device ID: ${deviceId.take(8)}…"
 
+        // 녹음 모드 표시 (현재 Samsung 고정)
+        val mode = PreferenceManager.getRecordingMode(this)
+        tvRecordingMode.text = mode.displayName
+
+        // 감시 경로 표시
+        val watchPath = DeviceDetector.resolveRecordingPath()
+        tvWatchPath.text = watchPath ?: "경로 없음"
+        if (watchPath == null) {
+            tvWatchPath.setTextColor(getColor(android.R.color.holo_red_light))
+        }
+
+        // 서비스 상태 표시 및 시작
+        startPhoneStateService()
+        tvServiceStatus.text = "실행 중"
+        tvServiceStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+
+        // 권한 상태
+        updatePermissionStatus()
+
+        // 업로드 실패 큐 관찰
+        observeFailedQueue()
+
+        // 수동 업로드
         btnManualUpload.setOnClickListener {
             filePickerLauncher.launch("audio/*")
         }
 
+        // 실패 재시도
         btnRetryFailed.setOnClickListener {
             retryFailedUploads()
         }
 
-        startForegroundService(Intent(this, PhoneStateService::class.java))
-    }
-
-    /**
-     * 수동 업로드: 담당자가 선택한 파일을 S3Uploader 큐에 등록
-     * 메타데이터는 파일명 파싱 시도, 없으면 unknown으로 처리
-     */
-    private fun handleManualUpload(uris: List<Uri>) {
-        lifecycleScope.launch {
-            var count = 0
-            uris.forEach { uri ->
-                val filePath = getFilePathFromUri(uri) ?: return@forEach
-                S3Uploader.enqueue(
-                    context = this@MainActivity,
-                    filePath = filePath,
-                    direction = "unknown",
-                    callerNumber = "unknown",
-                    callStartTime = System.currentTimeMillis()
-                )
-                count++
-            }
-            Toast.makeText(
-                this@MainActivity,
-                "${count}개 파일이 업로드 대기열에 추가됐습니다",
-                Toast.LENGTH_SHORT
-            ).show()
+        // 등록 해제
+        btnUnregister.setOnClickListener {
+            showUnregisterDialog()
         }
     }
 
-    /**
-     * FailedUploadQueue에서 실패 목록을 가져와 재시도 큐에 등록
-     */
-    private fun retryFailedUploads() {
-        lifecycleScope.launch {
-            val db = FailedUploadDatabase.getInstance(this@MainActivity)
-            val failedList = db.dao().getAllOnce()
+    // ── 권한 상태 ──────────────────────────────────────────────────
 
-            if (failedList.isEmpty()) {
+    private fun updatePermissionStatus() {
+        val denied = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (denied.isEmpty()) {
+            tvPermissionStatus.text = "모두 허용됨"
+            tvPermissionStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+            btnCheckPermissions.visibility = View.GONE
+        } else {
+            tvPermissionStatus.text = "미허용 ${denied.size}개"
+            tvPermissionStatus.setTextColor(getColor(android.R.color.holo_red_light))
+            btnCheckPermissions.visibility = View.VISIBLE
+            btnCheckPermissions.setOnClickListener {
+                // 권한 재요청 시도, 완전 거부 상태면 설정으로 이동
+                val canRequest = denied.any { shouldShowRequestPermissionRationale(it) }
+                if (canRequest) {
+                    permissionLauncher.launch(denied.toTypedArray())
+                } else {
+                    startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", packageName, null)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // ── 업로드 실패 큐 관찰 ────────────────────────────────────────
+
+    private fun observeFailedQueue() {
+        val db = FailedUploadDatabase.getInstance(this)
+        lifecycleScope.launch {
+            db.dao().getCount().collect { count ->
+                if (count > 0) {
+                    tvFailedCount.text = "${count}건"
+                    tvFailedCount.setTextColor(getColor(android.R.color.holo_red_light))
+                    btnRetryFailed.isEnabled = true
+                } else {
+                    tvFailedCount.text = "없음"
+                    tvFailedCount.setTextColor(getColor(android.R.color.holo_green_dark))
+                    btnRetryFailed.isEnabled = false
+                }
+            }
+        }
+    }
+
+    private fun retryFailedUploads() {
+        val db = FailedUploadDatabase.getInstance(this)
+        lifecycleScope.launch {
+            val failed = withContext(Dispatchers.IO) { db.dao().getAllOnce() }
+            if (failed.isEmpty()) {
                 Toast.makeText(this@MainActivity, "재시도할 파일이 없습니다", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-
-            failedList.forEach { item ->
+            failed.forEach { item ->
                 S3Uploader.enqueue(
                     context = this@MainActivity,
                     filePath = item.localFilePath,
@@ -251,42 +284,102 @@ class MainActivity : AppCompatActivity() {
                     callerNumber = item.callerNumber,
                     callStartTime = item.callStartTime
                 )
-                db.dao().deleteById(item.id)
+                withContext(Dispatchers.IO) { db.dao().deleteById(item.id) }
             }
+            Toast.makeText(this@MainActivity, "${failed.size}건 재시도 등록 완료", Toast.LENGTH_SHORT).show()
+        }
+    }
 
+    // ── 수동 업로드 메타데이터 입력 다이얼로그 ──────────────────────
+
+    /**
+     * 파일 선택 후 발신/수신 방향과 전화번호를 입력받아 업로드
+     * 이전: direction=unknown, callerNumber=unknown 하드코딩
+     * 이후: 담당자가 직접 입력 → 파이프라인에서 정확한 메타로 분석 가능
+     */
+    private fun showManualUploadMetaDialog(uris: List<Uri>) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_manual_upload_meta, null)
+        val etNumber = dialogView.findViewById<EditText>(R.id.etCallerNumber)
+        val btnIncoming = dialogView.findViewById<Button>(R.id.btnDirectionIncoming)
+        val btnOutgoing = dialogView.findViewById<Button>(R.id.btnDirectionOutgoing)
+
+        var selectedDirection = "incoming"
+        btnIncoming.backgroundTintList = getColorStateList(android.R.color.holo_blue_light)
+        btnOutgoing.backgroundTintList = getColorStateList(android.R.color.darker_gray)
+
+        btnIncoming.setOnClickListener {
+            selectedDirection = "incoming"
+            btnIncoming.backgroundTintList = getColorStateList(android.R.color.holo_blue_light)
+            btnOutgoing.backgroundTintList = getColorStateList(android.R.color.darker_gray)
+        }
+        btnOutgoing.setOnClickListener {
+            selectedDirection = "outgoing"
+            btnOutgoing.backgroundTintList = getColorStateList(android.R.color.holo_blue_light)
+            btnIncoming.backgroundTintList = getColorStateList(android.R.color.darker_gray)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("업로드 정보 입력")
+            .setView(dialogView)
+            .setPositiveButton("업로드") { _, _ ->
+                val callerNumber = etNumber.text.toString().trim().ifEmpty { "unknown" }
+                handleManualUpload(uris, selectedDirection, callerNumber)
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun handleManualUpload(uris: List<Uri>, direction: String, callerNumber: String) {
+        lifecycleScope.launch {
+            var successCount = 0
+            uris.forEach { uri ->
+                val filePath = withContext(Dispatchers.IO) { getFilePathFromUri(uri) }
+                if (filePath != null) {
+                    S3Uploader.enqueue(
+                        context = this@MainActivity,
+                        filePath = filePath,
+                        direction = direction,
+                        callerNumber = callerNumber,
+                        callStartTime = System.currentTimeMillis()
+                    )
+                    successCount++
+                }
+            }
             Toast.makeText(
                 this@MainActivity,
-                "${failedList.size}개 파일 재시도 등록 완료",
+                "${successCount}개 파일 업로드 큐 등록 완료",
                 Toast.LENGTH_SHORT
             ).show()
         }
     }
 
-    /**
-     * 실패 큐 개수 실시간 관찰 → UI 업데이트
-     */
-    private fun observeFailedQueue() {
-        val db = FailedUploadDatabase.getInstance(this)
-        lifecycleScope.launch {
-            db.dao().getCount().collect { count ->
-                tvFailedCount.text = if (count > 0) {
-                    "업로드 실패: ${count}개"
-                } else {
-                    "업로드 실패 없음"
-                }
-                tvFailedCount.setTextColor(
-                    if (count > 0) getColor(android.R.color.holo_red_light)
-                    else getColor(android.R.color.holo_green_dark)
-                )
-                btnRetryFailed.isEnabled = count > 0
+    // ── 등록 해제 ──────────────────────────────────────────────────
+
+    private fun showUnregisterDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("기기 등록 해제")
+            .setMessage("등록을 해제하면 통화 녹음 및 업로드가 중단됩니다.\n계속하시겠습니까?")
+            .setPositiveButton("해제") { _, _ ->
+                stopService(Intent(this, PhoneStateService::class.java))
+                PreferenceManager.clear(this)
+                showUnregisteredState()
+                Toast.makeText(this, "등록이 해제되었습니다", Toast.LENGTH_SHORT).show()
             }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    // ── 공통 유틸 ──────────────────────────────────────────────────
+
+    private fun startPhoneStateService() {
+        val intent = Intent(this, PhoneStateService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
         }
     }
 
-    /**
-     * Uri → 실제 파일 경로 변환
-     * ContentResolver로 임시 복사 후 경로 반환
-     */
     private fun getFilePathFromUri(uri: Uri): String? {
         return try {
             val fileName = contentResolver.query(uri, null, null, null, null)?.use { cursor ->

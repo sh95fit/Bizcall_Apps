@@ -1,106 +1,342 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
     android:background="#F8F9FA">
 
-    <TextView
-        android:id="@+id/tvTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="BizCall 업무폰 등록"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#1A1A2E"
-        android:layout_marginBottom="8dp"/>
-
-    <TextView
-        android:id="@+id/tvSubtitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="관리자에게 받은 QR 또는 토큰을 입력하세요"
-        android:textSize="14sp"
-        android:textColor="#6C757D"
-        android:gravity="center"
-        android:layout_marginBottom="32dp"/>
-
-    <!-- QR 스캔 버튼 -->
-    <Button
-        android:id="@+id/btnScanQr"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="QR 코드 스캔"
-        android:textSize="16sp"
-        android:backgroundTint="#4CAF50"
-        android:layout_marginBottom="16dp"/>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="또는 토큰 직접 입력"
-        android:textSize="12sp"
-        android:textColor="#6C757D"
-        android:layout_marginBottom="16dp"/>
-
-    <!-- 토큰 직접 입력 -->
-    <EditText
-        android:id="@+id/etToken"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:hint="등록 토큰 입력"
-        android:inputType="text"
-        android:background="@android:drawable/edit_text"
-        android:padding="12dp"
-        android:layout_marginBottom="16dp"/>
-
-    <Button
-        android:id="@+id/btnRegister"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="토큰으로 등록"
-        android:textSize="16sp"
-        android:backgroundTint="#2196F3"
-        android:layout_marginBottom="24dp"/>
-
-    <TextView
-        android:id="@+id/tvStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="14sp"
-        android:gravity="center"
-        android:textColor="#6C757D"/>
-
-    <!-- 수동 업로드 버튼 (등록 완료 후에만 표시) -->
-    <Button
-        android:id="@+id/btnManualUpload"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="이전 녹음 파일 업로드"
-        android:visibility="gone" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <!-- 실패 파일 개수 표시 -->
-    <TextView
-        android:id="@+id/tvFailedCount"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="업로드 실패 없음"
-        android:textAlignment="center"
-        android:visibility="gone" />
+        <!-- ==================== 공통 헤더 ==================== -->
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BizCall"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="#1A1A2E"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="4dp" />
 
-    <!-- 실패 파일 재시도 버튼 -->
-    <Button
-        android:id="@+id/btnRetryFailed"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="실패 파일 재시도"
-        android:enabled="false"
-        android:visibility="gone" />
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="업무 통화 자동 녹음 · 분석 시스템"
+            android:textSize="13sp"
+            android:textColor="#6C757D"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="32dp" />
 
-</LinearLayout>
+        <!-- ==================== 등록 전 영역 ==================== -->
+        <LinearLayout
+            android:id="@+id/layoutUnregistered"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="visible">
+
+            <Button
+                android:id="@+id/btnScanQr"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:text="QR 코드 스캔"
+                android:textSize="16sp"
+                android:backgroundTint="#4CAF50"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="또는 토큰 직접 입력"
+                android:textSize="12sp"
+                android:textColor="#6C757D"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="12dp" />
+
+            <EditText
+                android:id="@+id/etToken"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:hint="등록 토큰 입력"
+                android:inputType="text"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnRegister"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:text="토큰으로 등록"
+                android:textSize="16sp"
+                android:backgroundTint="#2196F3"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="13sp"
+                android:gravity="center"
+                android:textColor="#6C757D" />
+
+        </LinearLayout>
+
+        <!-- ==================== 등록 후 영역 ==================== -->
+        <LinearLayout
+            android:id="@+id/layoutRegistered"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- 등록 상태 카드 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="등록 정보"
+                    android:textSize="12sp"
+                    android:textColor="#6C757D"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvPhoneId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Phone ID: -"
+                    android:textSize="13sp"
+                    android:textColor="#1A1A2E"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/tvDeviceId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Device ID: -"
+                    android:textSize="13sp"
+                    android:textColor="#1A1A2E" />
+
+            </LinearLayout>
+
+            <!-- 서비스 상태 카드 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="서비스 상태"
+                    android:textSize="12sp"
+                    android:textColor="#6C757D"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- 녹음 방식 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="6dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="녹음 방식"
+                        android:textSize="13sp"
+                        android:textColor="#495057" />
+
+                    <TextView
+                        android:id="@+id/tvRecordingMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="삼성 자동 녹음 감지"
+                        android:textSize="13sp"
+                        android:textColor="#4CAF50"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <!-- 감시 경로 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="6dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="감시 경로"
+                        android:textSize="13sp"
+                        android:textColor="#495057" />
+
+                    <TextView
+                        android:id="@+id/tvWatchPath"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-"
+                        android:textSize="11sp"
+                        android:textColor="#6C757D" />
+
+                </LinearLayout>
+
+                <!-- 서비스 실행 상태 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="모니터 서비스"
+                        android:textSize="13sp"
+                        android:textColor="#495057" />
+
+                    <TextView
+                        android:id="@+id/tvServiceStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="실행 중"
+                        android:textSize="13sp"
+                        android:textColor="#4CAF50"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- 권한 상태 카드 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="권한 상태"
+                        android:textSize="12sp"
+                        android:textColor="#6C757D" />
+
+                    <TextView
+                        android:id="@+id/tvPermissionStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="확인 중..."
+                        android:textSize="12sp"
+                        android:textColor="#6C757D" />
+
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnCheckPermissions"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:text="권한 설정으로 이동"
+                    android:textSize="13sp"
+                    android:backgroundTint="#FF9800"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+            <!-- 업로드 실패 카드 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp"
+                android:elevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="업로드 실패"
+                        android:textSize="12sp"
+                        android:textColor="#6C757D" />
+
+                    <TextView
+                        android:id="@+id/tvFailedCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="없음"
+                        android:textSize="12sp"
+                        android:textColor="#4CAF50" />
+
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnRetryFailed"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:text="실패 파일 재시도"
+                    android:textSize="13sp"
+                    android:backgroundTint="#2196F3"
+                    android:enabled="false" />
+
+            </LinearLayout>
+
+            <!-- 액션 버튼 영역 -->
+            <Button
+                android:id="@+id/btnManualUpload"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="이전 녹음 파일 수동 업로드"
+                android:textSize="14sp"
+                android:backgroundTint="#607D8B"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnUnregister"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="기기 등록 해제"
+                android:textSize="14sp"
+                android:backgroundTint="#F44336" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
