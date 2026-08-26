@@ -18,6 +18,7 @@ class UploadWorker(
         const val KEY_CALLER_NUMBER = "key_caller_number"
         const val KEY_CALL_START_TIME = "key_call_start_time"
         private const val TAG = "UploadWorker"
+        private const val MAX_RETRY_COUNT = 3  // 최대 재시도 횟수
     }
 
     override suspend fun doWork(): Result {
@@ -25,18 +26,17 @@ class UploadWorker(
             Log.e(TAG, "파일 경로 없음 — 작업 취소")
             return Result.failure()
         }
-        val direction = inputData.getString(KEY_DIRECTION) ?: ""
-        val callerNumber = inputData.getString(KEY_CALLER_NUMBER) ?: ""
+        val direction = inputData.getString(KEY_DIRECTION) ?: "unknown"
+        val callerNumber = inputData.getString(KEY_CALLER_NUMBER) ?: "unknown"
         val callStartTime = inputData.getLong(KEY_CALL_START_TIME, 0L)
 
         val file = File(filePath)
         if (!file.exists()) {
             Log.e(TAG, "파일 없음 (이미 삭제됐거나 경로 오류): $filePath")
-            // 파일 자체가 없으면 재시도해도 의미 없으므로 failure 반환
             return Result.failure()
         }
 
-        Log.d(TAG, "업로드 시도: $filePath (시도 횟수: ${runAttemptCount + 1})")
+        Log.d(TAG, "업로드 시도: $filePath (시도 횟수: ${runAttemptCount + 1}/$MAX_RETRY_COUNT)")
 
         return try {
             val success = S3Uploader.uploadDirect(
@@ -50,12 +50,55 @@ class UploadWorker(
                 Log.d(TAG, "업로드 성공: $filePath")
                 Result.success()
             } else {
-                Log.w(TAG, "업로드 실패 — 재시도 예약: $filePath")
-                Result.retry()
+                handleFailure(filePath, direction, callerNumber, callStartTime, "업로드 실패")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "업로드 예외 발생: ${e.message}")
+            Log.e(TAG, "업로드 예외: ${e.message}")
+            handleFailure(filePath, direction, callerNumber, callStartTime, e.message ?: "알 수 없는 오류")
+        }
+    }
+
+    private suspend fun handleFailure(
+        filePath: String,
+        direction: String,
+        callerNumber: String,
+        callStartTime: Long,
+        error: String
+    ): Result {
+        return if (runAttemptCount < MAX_RETRY_COUNT - 1) {
+            // 아직 재시도 횟수 남음 → WorkManager 재시도
+            Log.w(TAG, "재시도 예약 (${runAttemptCount + 1}/$MAX_RETRY_COUNT): $filePath")
             Result.retry()
+        } else {
+            // 3회 모두 실패 → FailedUploadQueue에 저장
+            Log.e(TAG, "최대 재시도 초과 → FailedUploadQueue 저장: $filePath")
+            saveToFailedQueue(filePath, direction, callerNumber, callStartTime, error)
+            Result.failure()
+        }
+    }
+
+    private suspend fun saveToFailedQueue(
+        filePath: String,
+        direction: String,
+        callerNumber: String,
+        callStartTime: Long,
+        error: String
+    ) {
+        try {
+            val db = FailedUploadDatabase.getInstance(context)
+            db.dao().insert(
+                FailedUpload(
+                    localFilePath = filePath,
+                    direction = direction,
+                    callerNumber = callerNumber,
+                    callStartTime = callStartTime,
+                    retryCount = runAttemptCount + 1,
+                    lastError = error
+                )
+            )
+            Log.d(TAG, "FailedUploadQueue 저장 완료: $filePath")
+        } catch (e: Exception) {
+            Log.e(TAG, "FailedUploadQueue 저장 실패: ${e.message}")
         }
     }
 }

@@ -74,4 +74,33 @@
         android:gravity="center"
         android:textColor="#6C757D"/>
 
+    <!-- 수동 업로드 버튼 (등록 완료 후에만 표시) -->
+    <Button
+        android:id="@+id/btnManualUpload"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="이전 녹음 파일 업로드"
+        android:visibility="gone" />
+
+    <!-- 실패 파일 개수 표시 -->
+    <TextView
+        android:id="@+id/tvFailedCount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="업로드 실패 없음"
+        android:textAlignment="center"
+        android:visibility="gone" />
+
+    <!-- 실패 파일 재시도 버튼 -->
+    <Button
+        android:id="@+id/btnRetryFailed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="실패 파일 재시도"
+        android:enabled="false"
+        android:visibility="gone" />
+
 </LinearLayout>
