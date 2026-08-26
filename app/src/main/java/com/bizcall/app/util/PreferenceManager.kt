@@ -6,29 +6,22 @@ object PreferenceManager {
 
     private const val PREF_NAME = "bizcall_prefs"
     private const val KEY_PHONE_ID = "phone_id"
-    private const val KEY_TOKEN = "token"
     private const val KEY_DEVICE_ID = "device_id"
     private const val KEY_REGISTERED = "is_registered"
 
-    // 저장
-    fun savePhoneInfo(context: Context, phoneId: String, token: String, deviceId: String) {
-        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
+    // 등록 완료 시 저장 (토큰은 저장하지 않음 — 이후 인증은 phone_id+device_id)
+    fun savePhoneInfo(context: Context, phoneId: String, deviceId: String) {
+        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .edit()
             .putString(KEY_PHONE_ID, phoneId)
-            .putString(KEY_TOKEN, token)
             .putString(KEY_DEVICE_ID, deviceId)
             .putBoolean(KEY_REGISTERED, true)
             .apply()
     }
 
-    // 조회
     fun getPhoneId(context: Context): String? =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .getString(KEY_PHONE_ID, null)
-
-    fun getToken(context: Context): String? =
-        context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_TOKEN, null)
 
     fun getDeviceId(context: Context): String? =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)

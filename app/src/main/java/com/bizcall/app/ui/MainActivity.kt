@@ -104,7 +104,6 @@ class MainActivity : AppCompatActivity() {
         val deniedPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-
         if (deniedPermissions.isEmpty()) return
 
         AlertDialog.Builder(this)
@@ -132,22 +131,28 @@ class MainActivity : AppCompatActivity() {
                 )
                 if (response.isSuccessful && response.body() != null) {
                     val body = response.body()!!
+                    // 등록 완료 — phone_id + device_id만 저장 (토큰은 저장하지 않음)
                     PreferenceManager.savePhoneInfo(
                         context = this@MainActivity,
                         phoneId = body.phone_id,
-                        token = token,
                         deviceId = deviceId
                     )
                     showRegisteredState()
                     checkAndRequestPermissions()
                 } else {
-                    tvStatus.text = "등록 실패: 서버 오류 (${response.code()})"
+                    val errorMsg = when (response.code()) {
+                        401 -> "유효하지 않은 토큰입니다"
+                        409 -> "이미 다른 기기에 등록된 토큰입니다"
+                        403 -> "비활성화된 업무폰입니다"
+                        else -> "등록 실패 (${response.code()})"
+                    }
+                    tvStatus.text = errorMsg
                     tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
                     btnRegister.isEnabled = true
                     btnScanQr.isEnabled = true
                 }
             } catch (e: Exception) {
-                tvStatus.text = "등록 실패: ${e.message}"
+                tvStatus.text = "네트워크 오류: ${e.message}"
                 tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
                 btnRegister.isEnabled = true
                 btnScanQr.isEnabled = true

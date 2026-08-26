@@ -72,18 +72,17 @@ object S3Uploader {
                 return false
             }
 
-            // PreferenceManager에서 phone_id, token 가져오기
+            // phone_id + device_id로 임시 자격증명 발급 (토큰 불필요)
             val phoneId = PreferenceManager.getPhoneId(context)
-            val token = PreferenceManager.getToken(context)
+            val deviceId = PreferenceManager.getDeviceId(context)
 
-            if (phoneId.isNullOrBlank() || token.isNullOrBlank()) {
-                Log.e(TAG, "phone_id 또는 token 없음 — 업로드 불가")
+            if (phoneId.isNullOrBlank() || deviceId.isNullOrBlank()) {
+                Log.e(TAG, "phone_id 또는 device_id 없음 — 업로드 불가")
                 return false
             }
 
-            // API Gateway에서 임시 자격증명 발급
             val credResponse = ApiClient.phoneApi.getCredentials(
-                CredentialsRequest(phone_id = phoneId, token = token)
+                CredentialsRequest(phone_id = phoneId, device_id = deviceId)
             )
 
             if (!credResponse.isSuccessful || credResponse.body() == null) {
@@ -93,7 +92,6 @@ object S3Uploader {
 
             val creds = credResponse.body()!!
 
-            // 발급받은 임시 자격증명으로 S3 클라이언트 생성
             val sessionCredentials = BasicSessionCredentials(
                 creds.access_key_id,
                 creds.secret_access_key,
