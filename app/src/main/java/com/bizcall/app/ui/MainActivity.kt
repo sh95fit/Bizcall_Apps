@@ -171,7 +171,6 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = "등록 중..."
         tvStatus.setTextColor(getColor(android.R.color.holo_orange_light))
 
-        // ★ 수정: getOrCreateDeviceId → getOrCreate
         val deviceId = DeviceIdManager.getOrCreate(this)
 
         lifecycleScope.launch {
@@ -181,21 +180,44 @@ class MainActivity : AppCompatActivity() {
                         RegisterRequest(token = token, device_id = deviceId)
                     )
                 }
+
                 if (response.isSuccessful && response.body() != null) {
                     val body = response.body()!!
                     PreferenceManager.savePhoneInfo(this@MainActivity, body.phone_id, deviceId)
                     startPhoneStateService()
                     showRegisteredState()
                 } else {
-                    tvStatus.text = "등록 실패: ${response.code()}"
+                    // 서버 에러 메시지 파싱 — 없으면 코드별 기본 메시지 사용
+                    val errorMessage = runCatching {
+                        val errorBody = response.errorBody()?.string() ?: ""
+                        org.json.JSONObject(errorBody).optString("error", "")
+                    }.getOrNull()?.takeIf { it.isNotEmpty() }
+                        ?: when (response.code()) {
+                            400 -> "입력값을 확인해주세요"
+                            401 -> "유효하지 않은 토큰입니다"
+                            403 -> "비활성화된 기기입니다. 담당자에게 문의하세요"
+                            409 -> "이미 다른 기기에 등록된 토큰입니다. 담당자에게 문의하세요"
+                            500 -> "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요"
+                            else -> "등록에 실패했습니다 (${response.code()})"
+                        }
+
+                    tvStatus.text = errorMessage
                     tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
                 }
+
             } catch (e: Exception) {
-                tvStatus.text = "오류: ${e.message}"
+                val userMessage = when {
+                    e is java.net.UnknownHostException
+                            || e is java.net.ConnectException -> "네트워크 연결을 확인해주세요"
+                    e is java.net.SocketTimeoutException -> "서버 응답이 없습니다. 잠시 후 다시 시도해주세요"
+                    else -> "오류가 발생했습니다. 잠시 후 다시 시도해주세요"
+                }
+                tvStatus.text = userMessage
                 tvStatus.setTextColor(getColor(android.R.color.holo_red_light))
             }
         }
     }
+
 
     // ── 등록 후 화면 ──────────────────────────────────────────────
 
