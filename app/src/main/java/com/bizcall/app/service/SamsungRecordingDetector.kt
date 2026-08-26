@@ -28,7 +28,6 @@ class SamsungRecordingDetector(
         private const val MIN_FILE_SIZE_BYTES = 1024L
 
         // 삼성 기기에서 CLOSE_WRITE가 IDLE보다 먼저 발생하는 타이밍 역전 대응
-        // 최대 대기 시간 및 폴링 간격
         private const val META_WAIT_MAX_MS = 2000L
         private const val META_WAIT_INTERVAL_MS = 100L
     }
@@ -66,7 +65,6 @@ class SamsungRecordingDetector(
                 // 타이밍 역전 대응:
                 // 삼성 기기에서 CLOSE_WRITE(파일 저장 완료)가
                 // IDLE 브로드캐스트(CallReceiver push)보다 먼저 도달하는 경우가 있음
-                // → 큐가 비어있으면 최대 META_WAIT_MAX_MS 동안 폴링 후 pop
                 // FileObserver.onEvent는 별도 스레드에서 실행되므로 sleep 안전
                 val meta = waitAndPop(fullPath)
                 onNewRecording(fullPath, meta)
@@ -80,8 +78,8 @@ class SamsungRecordingDetector(
     /**
      * PendingCallMeta 큐에 항목이 생길 때까지 최대 META_WAIT_MAX_MS 대기 후 pop
      *
-     * - 즉시 pop 성공 → 반환 (타이밍 정상 케이스)
-     * - 큐 비어있음 → 100ms 간격으로 재시도 (타이밍 역전 케이스)
+     * - 즉시 pop 성공  → 반환 (정상 케이스)
+     * - 큐 비어있음    → 100ms 간격으로 재시도 (타이밍 역전 케이스)
      * - 2초 후에도 없음 → null 반환 → unknown 폴백 (앱 재시작·만료 케이스)
      */
     private fun waitAndPop(fullPath: String): PendingCallMeta.CallMeta? {
