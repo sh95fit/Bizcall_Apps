@@ -321,11 +321,13 @@ class MainActivity : AppCompatActivity() {
             }
             failed.forEach { item ->
                 S3Uploader.enqueue(
-                    context       = this@MainActivity,
-                    filePath      = item.localFilePath,
-                    direction     = item.direction,
-                    callerNumber  = item.callerNumber,
-                    callStartTime = item.callStartTime
+                    context          = this@MainActivity,
+                    filePath         = item.localFilePath,
+                    direction        = item.direction,
+                    callerNumber     = item.callerNumber,
+                    callStartTime    = item.callStartTime,
+                    callEndTime      = 0L,   // FailedUpload에 종료 시각 없음 → null 폴백
+                    deleteAfterUpload = true  // 앱 내부 파일 → 업로드 후 삭제
                 )
                 withContext(Dispatchers.IO) { db.dao().deleteById(item.id) }
             }
@@ -378,11 +380,13 @@ class MainActivity : AppCompatActivity() {
                 val filePath = withContext(Dispatchers.IO) { getFilePathFromUri(uri) }
                 if (filePath != null) {
                     S3Uploader.enqueue(
-                        context       = this@MainActivity,
-                        filePath      = filePath,
-                        direction     = direction,
-                        callerNumber  = callerNumber,
-                        callStartTime = System.currentTimeMillis()
+                        context          = this@MainActivity,
+                        filePath         = filePath,
+                        direction        = direction,
+                        callerNumber     = callerNumber,
+                        callStartTime    = System.currentTimeMillis(),
+                        callEndTime      = 0L,   // 수동 업로드는 종료 시각 알 수 없음 → null 폴백
+                        deleteAfterUpload = true  // 임시 복사 파일 → 업로드 후 삭제
                     )
                     successCount++
                 }
@@ -394,6 +398,7 @@ class MainActivity : AppCompatActivity() {
             ).show()
         }
     }
+
 
     // ── 등록 해제 (담당자 문의 제한) ───────────────────────────────
 

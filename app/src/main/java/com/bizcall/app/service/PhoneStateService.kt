@@ -106,15 +106,19 @@ class PhoneStateService : Service() {
             val direction = meta?.direction ?: "unknown"
             val callerNumber = meta?.callerNumber ?: "unknown"
             val callStartTime = meta?.callStartTime ?: file.lastModified()
+            val callEndTime = meta?.callEndTime ?: System.currentTimeMillis() // ★ 추가
 
-            Log.d(TAG, "업로드 큐 등록: direction=$direction, number=$callerNumber, startTime=$callStartTime")
+            Log.d(TAG, "업로드 큐 등록: direction=$direction, number=$callerNumber, " +
+                    "startTime=$callStartTime, endTime=$callEndTime")
 
             S3Uploader.enqueue(
                 context = this,
                 filePath = filePath,
                 direction = direction,
                 callerNumber = callerNumber,
-                callStartTime = callStartTime
+                callStartTime = callStartTime,
+                callEndTime = callEndTime,       // ★ 추가
+                deleteAfterUpload = false        // ★ Samsung 원본 파일 보존
             )
         } catch (e: Exception) {
             Log.e(TAG, "Samsung 녹음 처리 오류: ${e.message}")

@@ -29,16 +29,8 @@ object S3Uploader {
     private const val TAG = "S3Uploader"
     private const val S3_PREFIX = "recordings/"
 
-    /**
-     * BizCall 표준 S3 키 생성
-     * 형식: recordings/{phone_id}_{direction}_{callerNumber}_{yyyyMMddHHmmss}.m4a
-     *
-     * - CallRecordingService(자체 녹음): 이미 파일명이 표준 형식 → file.name 그대로 사용
-     * - SamsungRecordingDetector(삼성 자동 녹음): 삼성 자체 파일명 → 표준 형식으로 변환
-     */
     private fun buildS3Key(
         context: Context,
-        file: File,
         direction: String,
         callerNumber: String,
         callStartTime: Long
@@ -55,13 +47,17 @@ object S3Uploader {
         filePath: String,
         direction: String,
         callerNumber: String,
-        callStartTime: Long
+        callStartTime: Long,
+        callEndTime: Long,
+        deleteAfterUpload: Boolean
     ) {
         val inputData = Data.Builder()
             .putString(UploadWorker.KEY_FILE_PATH, filePath)
             .putString(UploadWorker.KEY_DIRECTION, direction)
             .putString(UploadWorker.KEY_CALLER_NUMBER, callerNumber)
             .putLong(UploadWorker.KEY_CALL_START_TIME, callStartTime)
+            .putLong(UploadWorker.KEY_CALL_END_TIME, callEndTime)
+            .putBoolean(UploadWorker.KEY_DELETE_AFTER_UPLOAD, deleteAfterUpload)
             .build()
 
         val constraints = Constraints.Builder()
@@ -71,15 +67,11 @@ object S3Uploader {
         val uploadRequest = OneTimeWorkRequestBuilder<UploadWorker>()
             .setInputData(inputData)
             .setConstraints(constraints)
-            .setBackoffCriteria(
-                BackoffPolicy.EXPONENTIAL,
-                30,
-                TimeUnit.SECONDS
-            )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
 
         WorkManager.getInstance(context).enqueue(uploadRequest)
-        Log.d(TAG, "WorkManager 업로드 큐 등록: $filePath")
+        Log.d(TAG, "WorkManager 업로드 큐 등록: $filePath / deleteAfterUpload=$deleteAfterUpload")
     }
 
     suspend fun uploadDirect(
@@ -87,7 +79,9 @@ object S3Uploader {
         filePath: String,
         direction: String,
         callerNumber: String,
-        callStartTime: Long
+        callStartTime: Long,
+        callEndTime: Long,
+        deleteAfterUpload: Boolean
     ): Boolean {
         return try {
             val file = File(filePath)
@@ -115,23 +109,17 @@ object S3Uploader {
 
             val creds = credResponse.body()!!
 
-            val sessionCredentials = BasicSessionCredentials(
-                creds.access_key_id,
-                creds.secret_access_key,
-                creds.session_token
-            )
-
             val s3Client = AmazonS3Client(
-                sessionCredentials,
+                BasicSessionCredentials(
+                    creds.access_key_id,
+                    creds.secret_access_key,
+                    creds.session_token
+                ),
                 Region.getRegion(Regions.AP_NORTHEAST_2)
             )
 
-            // 표준 파일명으로 S3 키 생성
-            // CallRecordingService 파일: phone_id가 이미 포함된 표준 파일명
-            // Samsung 자동 녹음 파일: 삼성 자체 파일명 → 표준 파일명으로 변환
             val s3Key = buildS3Key(
                 context = context,
-                file = file,
                 direction = direction,
                 callerNumber = callerNumber,
                 callStartTime = callStartTime
@@ -139,18 +127,34 @@ object S3Uploader {
 
             Log.d(TAG, "S3 업로드 키: $s3Key")
 
+            // ★ call_ended_at / duration_sec → S3 Object Metadata로 파이프라인에 전달
+            val callEndIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+                .format(Date(callEndTime))
+            val durationSec = if (callEndTime > callStartTime) {
+                ((callEndTime - callStartTime) / 1000).toString()
+            } else {
+                "0"
+            }
+
             val metadata = ObjectMetadata().apply {
                 contentType = "audio/mp4"
                 contentLength = file.length()
+                addUserMetadata("call-end-time", callEndIso)
+                addUserMetadata("call-duration-sec", durationSec)
             }
 
-            val request = PutObjectRequest(creds.bucket, s3Key, file.inputStream(), metadata)
-            s3Client.putObject(request)
+            s3Client.putObject(PutObjectRequest(creds.bucket, s3Key, file.inputStream(), metadata))
+            Log.d(TAG, "S3 업로드 성공: $s3Key / end=$callEndIso / duration=${durationSec}s")
 
-            Log.d(TAG, "S3 업로드 성공: $s3Key")
-
-            file.delete()
-            Log.d(TAG, "로컬 파일 삭제: $filePath")
+            // 모드별 파일 삭제 분기
+            // DIRECT_MIC: 앱이 직접 생성한 파일 → 삭제
+            // SAMSUNG: 삼성 원본 녹음 파일 → 보존
+            if (deleteAfterUpload) {
+                file.delete()
+                Log.d(TAG, "로컬 파일 삭제: $filePath")
+            } else {
+                Log.d(TAG, "로컬 파일 보존 (Samsung 원본): $filePath")
+            }
 
             true
 

@@ -17,8 +17,10 @@ class UploadWorker(
         const val KEY_DIRECTION = "key_direction"
         const val KEY_CALLER_NUMBER = "key_caller_number"
         const val KEY_CALL_START_TIME = "key_call_start_time"
+        const val KEY_CALL_END_TIME = "key_call_end_time"           // ★ 추가
+        const val KEY_DELETE_AFTER_UPLOAD = "key_delete_after_upload" // ★ 추가
         private const val TAG = "UploadWorker"
-        private const val MAX_RETRY_COUNT = 3  // 최대 재시도 횟수
+        private const val MAX_RETRY_COUNT = 3
     }
 
     override suspend fun doWork(): Result {
@@ -29,6 +31,8 @@ class UploadWorker(
         val direction = inputData.getString(KEY_DIRECTION) ?: "unknown"
         val callerNumber = inputData.getString(KEY_CALLER_NUMBER) ?: "unknown"
         val callStartTime = inputData.getLong(KEY_CALL_START_TIME, 0L)
+        val callEndTime = inputData.getLong(KEY_CALL_END_TIME, 0L)               // ★ 추가
+        val deleteAfterUpload = inputData.getBoolean(KEY_DELETE_AFTER_UPLOAD, true) // ★ 추가
 
         val file = File(filePath)
         if (!file.exists()) {
@@ -44,17 +48,21 @@ class UploadWorker(
                 filePath = filePath,
                 direction = direction,
                 callerNumber = callerNumber,
-                callStartTime = callStartTime
+                callStartTime = callStartTime,
+                callEndTime = callEndTime,
+                deleteAfterUpload = deleteAfterUpload
             )
             if (success) {
                 Log.d(TAG, "업로드 성공: $filePath")
                 Result.success()
             } else {
-                handleFailure(filePath, direction, callerNumber, callStartTime, "업로드 실패")
+                handleFailure(filePath, direction, callerNumber, callStartTime,
+                    callEndTime, deleteAfterUpload, "업로드 실패")
             }
         } catch (e: Exception) {
             Log.e(TAG, "업로드 예외: ${e.message}")
-            handleFailure(filePath, direction, callerNumber, callStartTime, e.message ?: "알 수 없는 오류")
+            handleFailure(filePath, direction, callerNumber, callStartTime,
+                callEndTime, deleteAfterUpload, e.message ?: "알 수 없는 오류")
         }
     }
 
@@ -63,14 +71,14 @@ class UploadWorker(
         direction: String,
         callerNumber: String,
         callStartTime: Long,
+        callEndTime: Long,
+        deleteAfterUpload: Boolean,
         error: String
     ): Result {
         return if (runAttemptCount < MAX_RETRY_COUNT - 1) {
-            // 아직 재시도 횟수 남음 → WorkManager 재시도
             Log.w(TAG, "재시도 예약 (${runAttemptCount + 1}/$MAX_RETRY_COUNT): $filePath")
             Result.retry()
         } else {
-            // 3회 모두 실패 → FailedUploadQueue에 저장
             Log.e(TAG, "최대 재시도 초과 → FailedUploadQueue 저장: $filePath")
             saveToFailedQueue(filePath, direction, callerNumber, callStartTime, error)
             Result.failure()

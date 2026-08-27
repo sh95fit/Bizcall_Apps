@@ -220,7 +220,6 @@ class CallRecordingService : Service() {
 
             val file = File(outputFilePath)
 
-            // 최소 통화 시간 미만이면 파일 삭제 (부재중/즉시 끊김 처리)
             if (callDurationMs < MIN_CALL_DURATION_MS) {
                 if (file.exists()) {
                     file.delete()
@@ -229,14 +228,16 @@ class CallRecordingService : Service() {
                 return
             }
 
-            // 최소 시간 이상이고 파일이 존재하면 업로드 큐 등록
             if (file.exists() && file.length() > 0) {
+                val callEndTime = callStartTime + callDurationMs // 종료 시각 계산
                 S3Uploader.enqueue(
                     context = this,
                     filePath = outputFilePath,
                     direction = direction,
                     callerNumber = callerNumber,
-                    callStartTime = callStartTime
+                    callStartTime = callStartTime,
+                    callEndTime = callEndTime,
+                    deleteAfterUpload = true     // DIRECT_MIC 앱 생성 파일 → 업로드 후 삭제
                 )
             } else {
                 Log.w(TAG, "파일 없거나 빈 파일 — 업로드 생략: $outputFilePath")
