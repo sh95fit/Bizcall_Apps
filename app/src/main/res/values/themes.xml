@@ -4,9 +4,8 @@
 
     <style name="Theme.BizCall" parent="Base.Theme.BizCall" />
 
-    <!-- ★ 스플래시 테마 -->
+    <!-- windowFullscreen 제거 -->
     <style name="Theme.BizCall.Splash" parent="Theme.BizCall">
         <item name="android:windowBackground">@drawable/splash_background</item>
-        <item name="android:windowFullscreen">true</item>
     </style>
 </resources>
