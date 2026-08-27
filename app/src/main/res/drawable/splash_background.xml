@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/res/android">
-    <!-- 흰색 배경 -->
     <item>
         <color android:color="#FFFFFF"/>
     </item>
-    <!-- 중앙에 로고 이미지 -->
     <item
         android:gravity="center"
         android:width="200dp"
         android:height="100dp">
         <bitmap
-            android:src="@mipmap/lunchlab_logo"
+            android:src="@drawable/lunchlab_splash"
             android:gravity="center"/>
     </item>
 </layer-list>
