@@ -4,8 +4,10 @@
 
     <style name="Theme.BizCall" parent="Base.Theme.BizCall" />
 
-    <!-- windowFullscreen 제거 -->
-    <style name="Theme.BizCall.Splash" parent="Theme.BizCall">
-        <item name="android:windowBackground">@drawable/splash_background_night</item>
+    <style name="Theme.BizCall.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#F3F3DB</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/lunchlab_splash</item>
+        <item name="windowSplashScreenIconBackgroundColor">#F3F3DB</item>
+        <item name="postSplashScreenTheme">@style/Theme.BizCall</item>
     </style>
 </resources>

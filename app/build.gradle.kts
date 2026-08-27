@@ -35,6 +35,14 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+
+    applicationVariants.all {
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "BizCall-${versionName}-${name}.apk"
+        }
+    }
+
 }
 
 dependencies {
@@ -74,4 +82,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")
     ksp("androidx.room:room-compiler:2.7.1") // ← KSP 어노테이션 프로세서
+
+    // 스플래시 스크린
+    implementation("androidx.core:core-splashscreen:1.0.1")
 }

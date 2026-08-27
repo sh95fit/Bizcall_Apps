@@ -4,8 +4,14 @@
 
     <style name="Theme.BizCall" parent="Base.Theme.BizCall" />
 
-    <!-- windowFullscreen 제거 -->
-    <style name="Theme.BizCall.Splash" parent="Theme.BizCall">
-        <item name="android:windowBackground">@drawable/splash_background</item>
+    <style name="Theme.BizCall.Splash" parent="Theme.SplashScreen">
+        <!-- 스플래시 배경색 -->
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <!-- 아이콘 대신 로고 이미지 직접 지정 -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/lunchlab_splash</item>
+        <!-- 아이콘 배경 흰색으로 통일 -->
+        <item name="windowSplashScreenIconBackgroundColor">#FFFFFF</item>
+        <!-- 스플래시 종료 후 원래 테마로 복귀 -->
+        <item name="postSplashScreenTheme">@style/Theme.BizCall</item>
     </style>
 </resources>
