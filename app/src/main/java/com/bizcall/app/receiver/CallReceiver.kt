@@ -1,8 +1,10 @@
 package com.bizcall.app.receiver
 
 import android.content.BroadcastReceiver
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.provider.CallLog
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.bizcall.app.service.CallRecordingService
@@ -21,19 +23,9 @@ class CallReceiver : BroadcastReceiver() {
         private var isOffhook = false
         private var currentDirection = ""
         private var currentCallerNumber = ""
-
-        // 발신 번호를 NEW_OUTGOING_CALL broadcast에서 미리 저장
-        var pendingOutgoingNumber = ""
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-
-        // ── 발신 전화 번호 사전 캡처 ──────────────────────────────────────
-        if (intent.action == Intent.ACTION_NEW_OUTGOING_CALL) {
-            pendingOutgoingNumber = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER) ?: ""
-            Log.d(TAG, "발신 번호 캡처: $pendingOutgoingNumber")
-            return
-        }
 
         if (intent.action != "android.intent.action.PHONE_STATE") return
         if (!PreferenceManager.isRegistered(context)) return
@@ -60,11 +52,11 @@ class CallReceiver : BroadcastReceiver() {
                     "outgoing"
                 }
 
-                // 발신이면 사전 캡처한 pendingOutgoingNumber 사용
+                // 발신이면 CallLog에서 최근 발신 번호 조회
                 currentCallerNumber = if (currentDirection == "incoming") {
                     incomingNumber
                 } else {
-                    pendingOutgoingNumber
+                    getLastOutgoingNumber(context) ?: ""
                 }
 
                 callStartTime = System.currentTimeMillis()
@@ -114,15 +106,50 @@ class CallReceiver : BroadcastReceiver() {
                     }
                 }
 
-                // 상태 초기화 (pendingOutgoingNumber도 초기화)
+                // 상태 초기화
                 lastState = TelephonyManager.CALL_STATE_IDLE
                 isOffhook = false
                 incomingNumber = ""
                 currentCallerNumber = ""
                 currentDirection = ""
                 callStartTime = 0L
-                pendingOutgoingNumber = ""
             }
+        }
+    }
+
+    /**
+     * CallLog에서 가장 최근 발신 번호를 조회한다.
+     * READ_CALL_LOG 권한 사용 (PROCESS_OUTGOING_CALLS 불필요)
+     * OFFHOOK 직후 호출 시 아직 CallLog에 기록 안 됐을 수 있어서
+     * 최대 3회 재시도 (300ms 간격)
+     */
+    private fun getLastOutgoingNumber(context: Context): String? {
+        repeat(3) { attempt ->
+            val number = queryLastOutgoing(context.contentResolver)
+            if (!number.isNullOrBlank()) {
+                Log.d(TAG, "발신 번호 조회 성공 (attempt=${attempt + 1}): $number")
+                return number
+            }
+            if (attempt < 2) Thread.sleep(300)
+        }
+        Log.w(TAG, "발신 번호 조회 실패 → 빈 값 처리")
+        return null
+    }
+
+    private fun queryLastOutgoing(cr: ContentResolver): String? {
+        return try {
+            cr.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls.NUMBER),
+                "${CallLog.Calls.TYPE} = ?",
+                arrayOf(CallLog.Calls.OUTGOING_TYPE.toString()),
+                "${CallLog.Calls.DATE} DESC"
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "CallLog 조회 오류: $e")
+            null
         }
     }
 }
