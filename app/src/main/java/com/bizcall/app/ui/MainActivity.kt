@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import android.os.PowerManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -108,11 +109,14 @@ class MainActivity : AppCompatActivity() {
         requestPermissionsIfNeeded()
     }
 
-    // ★ 시스템 설정에서 권한 허용 후 복귀 시 상태 갱신
+    // ★ 시스템 설정에서 권한 허용 후 복귀 시 상태 갱신 + 배터리 예외 재확인
     override fun onResume() {
         super.onResume()
         if (PreferenceManager.isRegistered(this)) {
             updatePermissionStatus()
+            // ★ 신규 2: 배터리 최적화 예외 요청 — One UI 절전이 앱 프로세스를 죽이지 않도록
+            //   (onResume에서도 재확인되어, 사용자가 거부하면 24시간 후 재요청됨)
+            requestBatteryOptimizationExemption()
         }
     }
 
@@ -328,8 +332,8 @@ class MainActivity : AppCompatActivity() {
                     direction        = item.direction,
                     callerNumber     = item.callerNumber,
                     callStartTime    = item.callStartTime,
-                    callEndTime      = 0L,   // FailedUpload에 종료 시각 없음 → null 폴백
-                    deleteAfterUpload = true  // 앱 내부 파일 → 업로드 후 삭제
+                    callEndTime      = item.callEndTime, // ★ v2부터 종료 시각 보존
+                    deleteAfterUpload = item.deleteAfterUpload  // ★ Samsung 원본 보존 정책 복원
                 )
                 withContext(Dispatchers.IO) { db.dao().deleteById(item.id) }
             }
@@ -414,6 +418,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ── 공통 유틸 ──────────────────────────────────────────────────
+
+    // ── 배터리 예외 요청 (One UI 절전 킬 방지) ──────────────────────
+
+    private fun requestBatteryOptimizationExemption() {
+        try {
+            val pm = getSystemService(PowerManager::class.java)
+            if (pm.isIgnoringBatteryOptimizations(packageName)) return
+
+            if (!PreferenceManager.shouldRequestBatteryExemption(this)) return
+
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+            PreferenceManager.markBatteryExemptionRequested(this)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "배터리 예외 요청 실패: ${e.message}")
+        }
+    }
+
 
     private fun startPhoneStateService() {
         val intent = Intent(this, PhoneStateService::class.java)

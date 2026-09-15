@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.bizcall.app.upload.S3Uploader
+import com.bizcall.app.util.UploadMarker   // ★ 신규 import
 import java.io.File
 
 class UploadWorker(
@@ -54,6 +55,8 @@ class UploadWorker(
             )
             if (success) {
                 Log.d(TAG, "업로드 성공: $filePath")
+                // ★ 성공 마킹 — 재스캔 워커의 중복 업로드 방지 (Samsung 원본 보존 파일)
+                UploadMarker.markUploaded(context, filePath)
                 Result.success()
             } else {
                 handleFailure(filePath, direction, callerNumber, callStartTime,
@@ -80,7 +83,7 @@ class UploadWorker(
             Result.retry()
         } else {
             Log.e(TAG, "최대 재시도 초과 → FailedUploadQueue 저장: $filePath")
-            saveToFailedQueue(filePath, direction, callerNumber, callStartTime, error)
+            saveToFailedQueue(filePath, direction, callerNumber, callStartTime, callEndTime, deleteAfterUpload, error)
             Result.failure()
         }
     }
@@ -90,6 +93,8 @@ class UploadWorker(
         direction: String,
         callerNumber: String,
         callStartTime: Long,
+        callEndTime: Long,
+        deleteAfterUpload: Boolean,   // ★ 파라미터 추가
         error: String
     ) {
         try {
@@ -100,6 +105,8 @@ class UploadWorker(
                     direction = direction,
                     callerNumber = callerNumber,
                     callStartTime = callStartTime,
+                    callEndTime = callEndTime,
+                    deleteAfterUpload = deleteAfterUpload,   // ★ Samsung 원본 보존 정책 계승
                     retryCount = runAttemptCount + 1,
                     lastError = error
                 )
