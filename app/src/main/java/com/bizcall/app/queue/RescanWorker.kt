@@ -134,7 +134,7 @@ class RescanWorker(
 
     // ── 2. 실패 큐 자동 재소비 ──────────────────────────────────────
 
-    private fun retryFailedQueue() {
+    private suspend fun retryFailedQueue() {   // ★ suspend 추가 — Room suspend DAO 호출 가능
         try {
             val db = FailedUploadDatabase.getInstance(context)
             val failed = db.dao().getAllOnce()
@@ -165,6 +165,7 @@ class RescanWorker(
             Log.e(TAG, "실패 큐 재소비 오류: ${e.message}")
         }
     }
+
 
     // ── 3. 미업로드 파일 재스캔 ────────────────────────────────────
 
